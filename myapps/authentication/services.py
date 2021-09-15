@@ -8,6 +8,9 @@ from utils.services.twilio_otp import create_otp
 from utils.jwt.jwt_security import get_refresh_access_token
 from django.db.models import Q
 import random
+from django.contrib.auth.hashers import (
+    check_password, is_password_usable, make_password,
+)
 
 
 def create_user(request, input_data):
@@ -27,7 +30,7 @@ def create_user(request, input_data):
         query &= Q(phone=input_data['phone'])
     if input_data['auth_type'] == EMAIL_LOGIN_TYPE:
         query &= Q(email=input_data['email'].lower())
-    user = UserLoginInfo.objects(query)
+    user = UserLoginInfo.objects.filter(query)
     if user:
         return generate_response(
             message='This user is already exist in our record with this phone or email, please login.'
@@ -36,13 +39,20 @@ def create_user(request, input_data):
     store_info = input_data.pop('store_info') if 'store_info' in input_data else {}
     organization_id = input_data.pop('organization_id') if 'organization_id' in input_data else None
     name = input_data.pop('name') if 'name' in input_data else ''
-    user = UserLoginInfo(**input_data)
-    errors = user.clean(**input_data)
+    # user = UserLoginInfo.objects.filter(**input_data)
+    errors = UserLoginInfo.objects.clean(**input_data)
     if errors:
         return errors
-    if user.email:
-        user.email = user.email.lower()
-    user.create_user(**input_data)
+    user = UserLoginInfo.objects.create_user(
+        input_data['email'].lower() if 'email' in input_data else '',
+        input_data['password'],
+        input_data['role'],
+        input_data[
+            'parent'] if 'parent' in input_data else None,
+        None,
+        False,
+        input_data
+    )
     if input_data['role'] == USER_ROLE_TYPE:
         create_user_profile(user, input_data, name)
     if input_data['role'] == ORGANIZATION_ROLE_TYPE:
@@ -55,7 +65,7 @@ def create_user(request, input_data):
         create_otp(user.phone_code, user.phone)
     if input_data['auth_type'] == EMAIL_LOGIN_TYPE:
         send_verification_email(request, input_data, user)
-    return generate_response(data=user.to_json(), message='User Created', status=HTTP_201_CREATED)
+    return generate_response(data=user.id, message='User Created', status=HTTP_201_CREATED)
 
 
 def login_user(request, input_data):
@@ -76,8 +86,7 @@ def login_user(request, input_data):
             Q(email=input_data['email_or_phone'].lower()) | Q(phone=input_data['email_or_phone']))
     except:
         return generate_response(message='No record found with this email or phone, please signup first.')
-    auth_success = user.check_pw_hash(input_data.get('password'))
-    if not auth_success:
+    if not check_password(input_data['password'], user.password):
         return generate_response(message='Email or password you provided is invalid. please check it once',
                                  status=HTTP_401_UNAUTHORIZED)
     if not user.is_active:
@@ -97,7 +106,14 @@ def login_user(request, input_data):
         return generate_response(data={'access_token': access_token,
                                        'refresh_token': refresh_token,
                                        'logged_in_as': f"{user.email}",
-                                       'meta': user.to_json()
+                                       'meta': {
+                                           'id': user.id,
+                                           'email': user.email,
+                                           'phone': user.phone,
+                                           'phone_code': user.phone_code,
+                                           'role': user.role,
+                                           'auth_type': user.auth_type,
+                                       }
                                        }, status=HTTP_200_OK)
 
 
@@ -130,7 +146,14 @@ def social_login(request, input_data):
     return generate_response(data={'access_token': access_token,
                                    'refresh_token': refresh_token,
                                    'logged_in_as': f"{user.email}",
-                                   'meta': user.to_json()
+                                   'meta': {
+                                       'id': user.id,
+                                       'email': user.email,
+                                       'phone': user.phone,
+                                       'phone_code': user.phone_code,
+                                       'role': user.role,
+                                       'auth_type': user.auth_type,
+                                   }
                                    }, status=HTTP_200_OK)
 
 
@@ -154,7 +177,7 @@ def update_user(input_data, user):
     if 'intro' in input_data and input_data['intro']:
         user_profile.intro = input_data['intro']
     user.save()
-    return generate_response(data=user.to_json(), message='User updated', status=HTTP_200_OK)
+    return generate_response(data=user.id, message='User updated', status=HTTP_200_OK)
 
 
 def update_organization(jwt_payload, input_data):
@@ -188,14 +211,7 @@ def update_organization(jwt_payload, input_data):
     if 'logo' in input_data and input_data['logo']:
         organization.logo = input_data['logo']
     if 'images' in input_data and input_data['images']:
-        embedded_images = list()
-        for image in input_data['images']:
-            if 'title' in image and 'url' in image:
-                image_instance = Images()
-                image_instance.title = image['title']
-                image_instance.url = image['url']
-                embedded_images.append(image_instance)
-        organization.images = embedded_images
+        organization.images = input_data['images']
     if 'address' in input_data and input_data['address']:
         organization.address = input_data['address']
     if 'city' in input_data and input_data['city']:
@@ -209,7 +225,7 @@ def update_organization(jwt_payload, input_data):
     user.save()
     organization.save()
 
-    return generate_response(data=organization.to_json(), message='Organization updated', status=HTTP_200_OK)
+    return generate_response(data=organization.id, message='Organization updated', status=HTTP_200_OK)
 
 
 def update_store(jwt_payload, input_data):
@@ -243,14 +259,7 @@ def update_store(jwt_payload, input_data):
     if 'logo' in input_data and input_data['logo']:
         store.logo = input_data['logo']
     if 'images' in input_data and input_data['images']:
-        embedded_images = list()
-        for image in input_data['images']:
-            if 'title' in image and 'url' in image:
-                image_instance = Images()
-                image_instance.title = image['title']
-                image_instance.url = image['url']
-                embedded_images.append(image_instance)
-        store.images = embedded_images
+        store.images = input_data['images']
     if 'address' in input_data and input_data['address']:
         store.address = input_data['address']
     if 'city' in input_data and input_data['city']:
@@ -264,13 +273,13 @@ def update_store(jwt_payload, input_data):
     user.save()
     store.save()
 
-    return generate_response(data=store.to_json(), message='Store updated', status=HTTP_200_OK)
+    return generate_response(data=store.id, message='Store updated', status=HTTP_200_OK)
 
 
 def create_user_location(jwt_payload, input_data):
     location = UserLocationModel(user=jwt_payload['id'], **input_data)
     location.save()
-    return generate_response(data=location.to_json(), message='Location created', status=HTTP_201_CREATED)
+    return generate_response(data=location.id, message='Location created', status=HTTP_201_CREATED)
 
 
 def update_user_location(input_data, location):
@@ -293,7 +302,7 @@ def update_user_location(input_data, location):
     if 'pin' in input_data and input_data['pin']:
         location.pin = input_data['pin']
     location.save()
-    return generate_response(data=location.to_json(), message='Location updated', status=HTTP_200_OK)
+    return generate_response(data=location.id, message='Location updated', status=HTTP_200_OK)
 
 
 def create_user_profile(user, input_data, name):

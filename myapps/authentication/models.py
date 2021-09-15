@@ -2,8 +2,6 @@ from django.db import models
 from django.contrib.auth import login
 from django.contrib.auth.models import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
-from utils.constants import *
-from utils.validations import *
 from django.contrib.postgres.fields import ArrayField
 from myapps.authentication.managers.user import ManagerAccountUser
 import uuid
@@ -14,30 +12,11 @@ from django.contrib.postgres.fields import ArrayField
 
 from utils.db.base_model import AbstractBaseModel
 
-from utils.common import generate_response
 from utils.constants import *
 from utils.db.base_model import AbstractBaseModel
 import phonenumbers
 from location_field.models.plain import PlainLocationField
 import re
-
-
-def validate_phone(value):
-    print(value)
-    try:
-        phonenumbers.parse(value)
-        return True
-    except ValidationError:
-        return False
-
-
-def validate_email(email):
-    regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    if re.match(regex, email):
-        return True
-
-    else:
-        return False
 
 
 class PermissionsModel(AbstractBaseModel):
@@ -91,34 +70,6 @@ class UserLoginInfo(AbstractBaseUser, PermissionsMixin, AbstractBaseModel):
     objects = ManagerAccountUser()
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
-
-    # def generate_pw_hash(self):
-    #     self.password = generate_password_hash(password=self.password).decode('utf-8')
-    #     return self.password
-    #
-    # def check_pw_hash(self, password: str) -> bool:
-    #     return check_password_hash(pw_hash=self.password, password=password)
-
-    # Use documentation from BCrypt for password hashing
-    # check_pw_hash.__doc__ = check_password_hash.__doc__
-
-    def clean(self, *args, **kwargs):
-        if self.auth_type == EMAIL_LOGIN_TYPE:
-            if not self.email or not type(self.email) == str or not validate_email(self.email):
-                return generate_response(message='Email is missing or invalid.')
-        if self.auth_type == PHONE_LOGIN_TYPE:
-            if not self.phone or not type(self.phone) == str or not validate_phone(self.phone_code + self.phone):
-                return generate_response(message='Phone is missing or invalid.')
-        if not self.password or not type(self.password) == str or not len(self.password) > 6:
-            return generate_response(message='Password is missing or invalid. password should be minimum 6 characters.')
-        if not self.role or not type(self.role) == str or self.role not in ROLE_TYPE:
-            return generate_response(message='Password is missing or invalid.')
-        if not self.auth_type or not type(self.auth_type) == str or self.auth_type not in LOGIN_TYPE:
-            return generate_response(message='Auth type is missing or invalid.')
-        if self.role == AGENCY_USER_ROLE_TYPE:
-            if not self.parent:
-                return generate_response(message='Parent id is required.')
-        return None
 
     # -------------------------------------------------------------------------
     # Meta

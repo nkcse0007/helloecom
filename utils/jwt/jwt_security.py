@@ -8,6 +8,7 @@ from utils.common import generate_response
 from utils.http_code import *
 import os
 from django.http.response import JsonResponse
+from utils.common import get_input_data
 
 private_key = open('utils/jwt/private.pem').read()
 public_key = open('utils/jwt/public.pub').read()
@@ -85,7 +86,7 @@ def authenticate_login(fun):
             try:
                 token = request.headers.get('Authorization').split()
                 if not token:
-                    token = request.get_json()['access_token']
+                    token = get_input_data(request)['access_token']
                 if not token:
                     return JsonResponse(generate_response(message='Unauthorised User', status=HTTP_401_UNAUTHORIZED))
 
@@ -150,7 +151,7 @@ def get_token(request):
     """
     token = request.headers.get('Authorization').split()
     if not token:
-        token = request.get_json()['access_token']
+        token = get_input_data(request)['access_token']
     if not token:
         return JsonResponse(generate_response(message='Unauthorised User', status=HTTP_401_UNAUTHORIZED))
 
